@@ -20,12 +20,18 @@ parser.add_argument('--epochs', type=int, default=1, help='number of epochs to t
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.01)')
 parser.add_argument('--log-interval', type=int, default=10, help='how many batches to wait before logging training status')
 parser.add_argument('--num-workers', type=int, default=2, help='how many workers for data loading')
+parser.add_argument('--manual-seed', type=int, default=800, help='manual seed for random number generators')
+
+use_gpu = torch.cuda.is_available()
 
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    torch.manual_seed(800)
-    random.seed(800)
+    torch.manual_seed(args.manual_seed)
+    random.seed(args.manual_seed)
+
+    if use_gpu:
+        torch.cuda.manual_seed(args.manual_seed)
 
     # Set up logger
     logger = setup_logger()
@@ -45,6 +51,11 @@ if __name__ == '__main__':
     logger.info("Loading the triplets loss function ...")
     triplets_loss = TripletsLoss()
 
+    # Enable GPU
+    if use_gpu:
+        model = model.cuda()
+        triplets_loss = triplets_loss.cuda()
+
     # Set model in training mode
     logger.info("Setting up training mode ...")
     model.train()
@@ -59,8 +70,12 @@ if __name__ == '__main__':
             anchors, pullers, pushers = \
                 data['anchor'], data['puller'], data['pusher']
 
-            anchors, pullers, pushers = \
-                Variable(anchors), Variable(pullers), Variable(pushers)
+            if use_gpu:
+                anchors, pullers, pushers = \
+                    Variable(anchors.cuda()), Variable(pullers.cuda()), Variable(pushers.cuda())
+            else:
+                anchors, pullers, pushers = \
+                    Variable(anchors), Variable(pullers), Variable(pushers)
 
             optimizer.zero_grad()
             features = model(anchors, pullers, pushers)
