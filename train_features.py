@@ -41,7 +41,7 @@ if __name__ == '__main__':
     # Load Dataset & Batch Loader
     logger.info("Loading the dataset ...")
     dataset = TrainingDataset(args.dataset)
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=1)
+    train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     # Load Model
     logger.info("Loading the model ...")

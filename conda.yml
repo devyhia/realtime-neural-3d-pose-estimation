@@ -113,5 +113,3 @@ dependencies:
     - urllib3==1.22
     - visdom==0.1.7
     - wrapt==1.10.11
-prefix: /Users/yehyaa/miniconda3/envs/tdcv
-
