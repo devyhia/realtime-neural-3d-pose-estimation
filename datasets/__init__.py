@@ -2,19 +2,24 @@ from torch.utils.data import Dataset
 from glob import glob
 from helpers.quaternion import Quaternion
 from collections import namedtuple
+import numpy as np
 
 
 class ObjectsDataset(Dataset):
     """A PyTorch wrapper for the Objects dataset
     """
 
-    def __init__(self, dataset_dir, classes=['ape', 'benchvise', 'cam', 'cat', 'duck']):
+    classes = ['ape', 'benchvise', 'cam', 'cat', 'duck']
+
+    def __init__(self, dataset_dir):
         """Initializes the ObjectsDataset: Loads the images and their 
         respective poses (i.e. Quaternions)
 
         Arguments:
             dataset_dir {string} -- location of the dataset folder
         """
+        
+        self.mean = np.array([63.96652548, 54.81466454, 48.04923144])[:, np.newaxis, np.newaxis]
 
         with open('{}real/training_split.txt'.format(dataset_dir)) as f:
             training_split = f.readline()
@@ -27,7 +32,7 @@ class ObjectsDataset(Dataset):
         dataset_test = {}
         dataset_coarse = {}
 
-        for c in classes:
+        for c in ObjectsDataset.classes:
             dataset_train[c] = []
             dataset_test[c] = []
             dataset_coarse[c] = []
@@ -83,4 +88,4 @@ class ObjectsDataset(Dataset):
         self.dataset_test = dataset_test
         self.dataset_coarse = dataset_coarse
         self.dataset_train = dataset_train
-        self.classes = classes
+        self.classes = ObjectsDataset.classes
