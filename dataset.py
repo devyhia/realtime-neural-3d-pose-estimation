@@ -187,6 +187,15 @@ class ObjectsDataset(object):
         return self.make_triplet(c, self.dataset_train[c][idx])
     
     def batch_training_triplets(self, batch_size, shuffle=True):
+        """Training triplets batch generator
+        
+        Arguments:
+            batch_size {int} -- Batch size to be generated
+        
+        Keyword Arguments:
+            shuffle {boolean} -- Should shuffle (default: {True})
+        """
+
         total = len(self.dataset_train_list)
         indices = list(range(total))
 
