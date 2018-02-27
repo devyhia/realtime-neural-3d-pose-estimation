@@ -3,3 +3,8 @@
 .pytest*
 .vscode*
 __pycache__
+checkpoints
+
+# Models (for both PyTorch and Tensorflow)
+*.ckpt
+*.pth
