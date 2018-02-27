@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from helpers.flatten import Flatten
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
