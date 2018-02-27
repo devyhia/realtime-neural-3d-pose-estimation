@@ -1,46 +1,88 @@
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
+import tensorflow as tf
 from helpers.flatten import Flatten
 
-class Features(nn.Module):
-    def __init__(self):
-        super(Features, self).__init__()
+tf.logging.set_verbosity(tf.logging.INFO)
+
+class Features(object):
+    def __init__(self, loss_margin=0.01):
+        self.loss_margin = loss_margin
 
         # num_classes = 5
-        # input_dim = 64
+        input_dim = 64
         channels = 3
         hidden_size = 256
         descriptor_size = 16
 
-        self.features = nn.Sequential(
-            nn.Conv2d(channels, 16, 8),
-            nn.MaxPool2d(2, 2),
-            nn.ReLU(),
-            nn.Conv2d(16, 7, 5),
-            nn.MaxPool2d(2, 2),
-            nn.ReLU(),
-            Flatten(),
-            nn.Linear(12*12*7, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, descriptor_size)
+        graph = {}
+
+        # Input Layer
+        graph['input_layer'] = tf.placeholder(tf.float32, shape=[None, input_dim, input_dim, channels])
+
+        # Batch Size
+        graph['batch_size'] = tf.placeholder(tf.int32, shape=[])
+
+        # Convolutional Layer #1
+        graph['conv1'] = tf.layers.conv2d(
+            inputs=graph['input_layer'],
+            filters=16,
+            kernel_size=[8, 8],
+            activation=tf.nn.relu)
+
+        # Pooling Layer #1
+        graph['pool1'] = tf.layers.max_pooling2d(inputs=graph['conv1'], pool_size=[2, 2], strides=2)
+
+        # Convolutional Layer #2 and Pooling Layer #2
+        graph['conv2'] = tf.layers.conv2d(
+            inputs=graph['pool1'],
+            filters=7,
+            kernel_size=[5, 5],
+            activation=tf.nn.relu)
+        graph['pool2'] = tf.layers.max_pooling2d(inputs=graph['conv2'], pool_size=[2, 2], strides=2)
+
+        graph['pool2_flat'] = tf.reshape(graph['pool2'], [-1, 7 * 12 * 12])
+        
+        graph['fc1'] = tf.layers.dense(inputs=graph['pool2_flat'], units=hidden_size, activation=tf.nn.relu)
+        
+        graph['fc2'] = tf.layers.dense(inputs=graph['fc1'], units=descriptor_size)
+
+        # graph['anchor_features'] = tf.slice(graph['fc2'], [0 * graph['batch_size'], -1], graph['batch_size'])
+        # graph['puller_features'] = tf.slice(graph['fc2'], [1 * graph['batch_size'], -1], graph['batch_size'])
+        # graph['pusher_features'] = tf.slice(graph['fc2'], [2 * graph['batch_size'], -1], graph['batch_size'])
+
+        graph['anchor_features'] = graph['fc2'][(0 * graph['batch_size']):(1 * graph['batch_size']), :]
+        graph['puller_features'] = graph['fc2'][(1 * graph['batch_size']):(2 * graph['batch_size']), :]
+        graph['pusher_features'] = graph['fc2'][(2 * graph['batch_size']):(3 * graph['batch_size']), :]
+
+        graph['diff_pos'] = tf.subtract(graph['anchor_features'], graph['puller_features'])
+        graph['diff_neg'] = tf.subtract(graph['anchor_features'], graph['pusher_features'])
+
+        graph['diff_pos'] = tf.multiply(graph['diff_pos'], graph['diff_pos'])
+        graph['diff_neg'] = tf.multiply(graph['diff_neg'], graph['diff_neg'])
+
+        graph['diff_pos'] = tf.reduce_sum(graph['diff_pos'], axis=1)
+        graph['diff_neg'] = tf.reduce_sum(graph['diff_neg'], axis=1)
+
+        graph['loss_pairs'] = graph['diff_pos']
+        graph['loss_triplets_ratio'] = 1 - tf.divide(
+            graph['diff_neg'], 
+            tf.add(
+                self.loss_margin,
+                graph['diff_pos']
+            )
+        )
+        
+        graph['loss_triplets'] = tf.maximum(
+            tf.zeros_like(graph['loss_triplets_ratio']),
+            graph['loss_triplets_ratio']
         )
 
-        self.weight_init()
-    
-    def weight_init(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, np.sqrt(2. / n))
-            # elif isinstance(m, nn.BatchNorm2d):
-            #     m.weight.data.fill_(1)
-            #     m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.bias.data.fill_(1)
-                m.weight.data.normal_(0, 0.005)
+        graph['total_loss'] = graph['loss_triplets'] + graph['loss_pairs']
+        graph['loss'] = tf.reduce_mean(graph['total_loss'])
 
-    def forward(self, anchors, pullers, pushers):
+        self.graph = graph
+
+    def evaluate_triplet(self, anchors, pullers, pushers, session=None):
         """Generate the features using the forward pass
         
         Arguments:
@@ -56,8 +98,34 @@ class Features(nn.Module):
             )
         """
 
-        x = self.features(anchors)
-        y = self.features(pullers)
-        z = self.features(pushers)
+        assert all([
+            anchors.shape[0] == pullers.shape[0],
+            pullers.shape[0] == pushers.shape[0],
+        ]), "Anchors, Pullers and Pushers "
+        
+        N = anchors.shape[0]
+        X = np.concatenate((anchors, pullers, pushers), axis=0)
 
-        return x, y, z
+        if not session:
+            session = tf.Session()
+
+        feats, loss_triplets, loss_pairs, loss = session.run([
+                self.graph['fc2'],
+                self.graph['loss_triplets'],
+                self.graph['loss_pairs'],
+                self.graph['total_loss']
+            ], feed_dict={
+            self.graph['input_layer']: X,
+            self.graph['batch_size']: N
+        })
+
+        print(np.concatenate((loss_triplets.reshape(-1,1), loss_pairs.reshape(-1,1), loss.reshape(-1,1)), axis=1))
+
+        if not session:
+            session.close()
+
+        x = feats[0:N]
+        y = feats[N:(2*N)]
+        z = feats[(2*N):(3*N)]
+
+        return x, y, z, loss
