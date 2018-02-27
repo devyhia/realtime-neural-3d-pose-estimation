@@ -2,12 +2,13 @@ import numpy as np
 import random
 import itertools
 import functools
-from helpers.logger import setup_logger
 from glob import glob
-from helpers.quaternion import Quaternion
 from collections import namedtuple
 import numpy as np
 from PIL import Image
+
+from helpers.logger import setup_logger
+from helpers.quaternion import Quaternion
 
 
 class ObjectsDataset(object):
@@ -26,7 +27,7 @@ class ObjectsDataset(object):
             dataset_dir {string} -- location of the dataset folder
         """
         
-        self.mean = np.array([63.96652548, 54.81466454, 48.04923144])[:, np.newaxis, np.newaxis]
+        self.mean = np.array([63.96652548, 54.81466454, 48.04923144])[np.newaxis, np.newaxis, :]
         self.logger = setup_logger()
         self.channels, self.width, self.height = 3, 64, 64
 
@@ -117,9 +118,9 @@ class ObjectsDataset(object):
         
         triplet = self.get_triplets(idx)
         
-        anchor = np.asarray(triplet.anchor.image).transpose((2, 0, 1))
-        puller = np.asarray(triplet.puller.image).transpose((2, 0, 1))
-        pusher = np.asarray(triplet.pusher.image).transpose((2, 0, 1))
+        anchor = np.asarray(triplet.anchor.image)
+        puller = np.asarray(triplet.puller.image)
+        pusher = np.asarray(triplet.pusher.image)
 
         return  {
             'anchor': anchor - self.mean,
@@ -206,14 +207,16 @@ class ObjectsDataset(object):
             batch_indices = indices[ndx:min(ndx + batch_size, total)]
 
             batch_triplets = {
-                'anchor': np.zeros((batch_size, self.channels, self.width, self.height)),
-                'puller': np.zeros((batch_size, self.channels, self.width, self.height)),
-                'pusher': np.zeros((batch_size, self.channels, self.width, self.height))
+                'anchor': np.zeros((batch_size, self.width, self.height, self.channels)),
+                'puller': np.zeros((batch_size, self.width, self.height, self.channels)),
+                'pusher': np.zeros((batch_size, self.width, self.height, self.channels))
             }
             
             # Create the triplets
             for batch_index, dataset_index in enumerate(batch_indices):
                 triplet = self.get_training_triplet(dataset_index)
                 batch_triplets['anchor'][batch_index, :] = triplet['anchor'][:]
+                batch_triplets['puller'][batch_index, :] = triplet['puller'][:]
+                batch_triplets['pusher'][batch_index, :] = triplet['pusher'][:]
 
             yield batch_triplets
