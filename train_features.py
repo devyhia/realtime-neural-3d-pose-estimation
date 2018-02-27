@@ -1,16 +1,18 @@
 import argparse
-import torch
-import torch.optim as optim
-import torch.nn.functional as F
-from torch.autograd import Variable
-from torchvision import datasets, transforms
-
 import random
-
+import tensorflow as tf
 from models.features import Features
-from models.triplets_loss import TripletsLoss
-from datasets.training import TrainingDataset
+from dataset import ObjectsDataset
 from helpers.logger import setup_logger
+
+from tensorflow.python.client import device_lib
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
+
+def is_gpu_available():
+    return len(get_available_gpus()) > 0
 
 # Training settings
 parser = argparse.ArgumentParser(description='Feature Extractor Trainer')
@@ -22,16 +24,13 @@ parser.add_argument('--log-interval', type=int, default=10, help='how many batch
 parser.add_argument('--num-workers', type=int, default=2, help='how many workers for data loading')
 parser.add_argument('--manual-seed', type=int, default=800, help='manual seed for random number generators')
 
-use_gpu = torch.cuda.is_available()
+use_gpu = is_gpu_available()
 
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    torch.manual_seed(args.manual_seed)
+    tf.set_random_seed(args.manual_seed)
     random.seed(args.manual_seed)
-
-    if use_gpu:
-        torch.cuda.manual_seed(args.manual_seed)
 
     # Set up logger
     logger = setup_logger()
@@ -40,56 +39,48 @@ if __name__ == '__main__':
 
     # Load Dataset & Batch Loader
     logger.info("Loading the dataset ...")
-    dataset = TrainingDataset(args.dataset)
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    dataset = ObjectsDataset(args.dataset)
 
     # Load Model
     logger.info("Loading the model ...")
     model = Features()
 
-    # Triplets Loss
-    logger.info("Loading the triplets loss function ...")
-    triplets_loss = TripletsLoss()
-
     # Enable GPU
-    if use_gpu:
-        model = model.cuda()
-        triplets_loss = triplets_loss.cuda()
+    device = '/gpu:0' if use_gpu else '/cpu:0'
+    logger.info("Training using {} ...".format(device))
 
-    # Set model in training mode
-    logger.info("Setting up training mode ...")
-    model.train()
-
-    # Adam Optimizer
+    # TF Optimizer / Adam Optimizer
     logger.info("Creating Adam Optimizer ...")
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = tf.train.AdamOptimizer(args.lr).minimize(model.graph['total_loss'])
+
+    # Model Initialization
+    init = tf.global_variables_initializer()
 
     # Start Training
-    for epoch in range(1, args.epochs + 1):
-        for batch_idx, data in enumerate(train_loader):
-            anchors, pullers, pushers = \
-                data['anchor'], data['puller'], data['pusher']
+    with tf.Session() as sess:
+        # Initialize all variables
+        sess.run(init)
 
-            if use_gpu:
+        # Optimize :)
+        for epoch in range(1, args.epochs + 1):
+            batch_iterator = dataset.batch_training_triplets(args.batch_size)
+            for batch_idx, data in enumerate(batch_iterator):
                 anchors, pullers, pushers = \
-                    Variable(anchors.cuda()), Variable(pullers.cuda()), Variable(pushers.cuda())
-            else:
-                anchors, pullers, pushers = \
-                    Variable(anchors), Variable(pullers), Variable(pushers)
+                    data['anchor'], data['puller'], data['pusher']
 
-            optimizer.zero_grad()
-            features = model(anchors, pullers, pushers)
+                # Backpropagate gradients
+                model.optimize(sess, optimizer, anchors, pullers, pushers)
+                
+                # Report on progress
+                if batch_idx % args.log_interval == 0:
+                    # Evaluate performance
+                    loss = model.evaluate_triplet(anchors, pullers, pushers, session=sess)
 
-            loss = triplets_loss(*features)
+                    logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        epoch, batch_idx * args.batch_size, dataset.training_length(),
+                        (100. * batch_idx * args.batch_size) / dataset.training_length(), loss
+                    ))
             
-            loss.backward()
-            optimizer.step()
-            
-            if batch_idx % args.log_interval == 0:
-                logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.data[0]
-                ))
-        
-        # Save Model After Each Epoch
-        torch.save(model.state_dict(), 'model.epoch.{}.pth'.format(epoch))
+            # Save Model After Each Epoch
+            save_path = model.saver.save(sess, 'checkpoints/model.epoch.{}.ckpt'.format(epoch))
+            logger.info("Model saved @ {}".format(save_path))

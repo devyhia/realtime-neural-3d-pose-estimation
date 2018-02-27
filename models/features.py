@@ -82,6 +82,28 @@ class Features(object):
 
         self.graph = graph
 
+        # Tensorflow Saver
+        self.saver = tf.train.Saver()
+    
+    def prepare_input(self, anchors, pullers, pushers):
+        """Prepares input for the graph
+        
+        Arguments:
+            anchors {array} -- a numpy array with all anchors in a batch
+            pullers {array} -- a numpy array with all pullers in a batch
+            pushers {array} -- a numpy array with all pushers in a batch
+        """
+
+        assert all([
+            anchors.shape[0] == pullers.shape[0],
+            pullers.shape[0] == pushers.shape[0],
+        ]), "Anchors, Pullers and Pushers "
+        
+        N = anchors.shape[0]
+        X = np.concatenate((anchors, pullers, pushers), axis=0)
+
+        return X, N
+
     def evaluate_triplet(self, anchors, pullers, pushers, session=None):
         """Generate the features using the forward pass
         
@@ -97,35 +119,35 @@ class Features(object):
                 [batch_size, number_of_features]
             )
         """
-
-        assert all([
-            anchors.shape[0] == pullers.shape[0],
-            pullers.shape[0] == pushers.shape[0],
-        ]), "Anchors, Pullers and Pushers "
         
-        N = anchors.shape[0]
-        X = np.concatenate((anchors, pullers, pushers), axis=0)
+        X, N = self.prepare_input(anchors, pullers, pushers)
 
         if not session:
             session = tf.Session()
 
-        feats, loss_triplets, loss_pairs, loss = session.run([
-                self.graph['fc2'],
-                self.graph['loss_triplets'],
-                self.graph['loss_pairs'],
-                self.graph['total_loss']
-            ], feed_dict={
+        loss = session.run(self.graph['loss'], feed_dict={
             self.graph['input_layer']: X,
             self.graph['batch_size']: N
         })
 
-        print(np.concatenate((loss_triplets.reshape(-1,1), loss_pairs.reshape(-1,1), loss.reshape(-1,1)), axis=1))
-
         if not session:
             session.close()
 
-        x = feats[0:N]
-        y = feats[N:(2*N)]
-        z = feats[(2*N):(3*N)]
+        return loss
+    
+    def optimize(self, session, optimizer, anchors, pullers, pushers):
+        """Run a tensorflow optimization step
+        
+        Arguments:
+            session {tf.Session} -- A tensorflow sessions
+            optimizer {tf.Optimizer} -- A tensorflow optimizer (initialized w/ learning rate)
+            anchors {array} -- a numpy array of anchors
+            pullers {array} -- a numpy array of pullers
+            pushers {array} -- a numpy array of pushers
+        """
 
-        return x, y, z, loss
+        X, N = self.prepare_input(anchors, pullers, pushers)
+        return session.run(optimizer, feed_dict={
+            self.graph['input_layer']: X,
+            self.graph['batch_size']: N
+        })

@@ -184,6 +184,9 @@ class ObjectsDataset(object):
             image=  Image.open(tpl[0])
         )
     
+    def training_length(self):
+        return len(self.dataset_train_list)
+    
     def get_anchor(self, c, idx):
         return self.make_triplet(c, self.dataset_train[c][idx])
     
