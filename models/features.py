@@ -6,6 +6,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 class Features(object):
     def __init__(self, loss_margin=0.01):
         self.loss_margin = loss_margin
+        self.optimization_step = 0
 
         # num_classes = 5
         input_dim = 64
@@ -16,42 +17,49 @@ class Features(object):
         graph = {}
 
         # Input Layer
-        graph['input_layer'] = tf.placeholder(tf.float32, shape=[None, input_dim, input_dim, channels])
+        graph['input_layer'] = tf.placeholder(tf.float32, shape=[None, input_dim, input_dim, channels], name='Input')
 
         # Batch Size
-        graph['batch_size'] = tf.placeholder(tf.int32, shape=[])
+        graph['batch_size'] = tf.placeholder(tf.int32, shape=[], name='BatchSize')
 
         # Convolutional Layer #1
         graph['conv1'] = tf.layers.conv2d(
+            name='Conv1',
             inputs=graph['input_layer'],
             filters=16,
             kernel_size=[8, 8],
             activation=tf.nn.relu)
 
         # Pooling Layer #1
-        graph['pool1'] = tf.layers.max_pooling2d(inputs=graph['conv1'], pool_size=[2, 2], strides=2)
+        graph['pool1'] = tf.layers.max_pooling2d(inputs=graph['conv1'], pool_size=[2, 2], strides=2, name='Pool1')
 
         # Convolutional Layer #2 and Pooling Layer #2
         graph['conv2'] = tf.layers.conv2d(
+            name='Conv2',
             inputs=graph['pool1'],
             filters=7,
             kernel_size=[5, 5],
             activation=tf.nn.relu)
-        graph['pool2'] = tf.layers.max_pooling2d(inputs=graph['conv2'], pool_size=[2, 2], strides=2)
+        graph['pool2'] = tf.layers.max_pooling2d(inputs=graph['conv2'], pool_size=[2, 2], strides=2, name='Pool2')
 
-        graph['pool2_flat'] = tf.reshape(graph['pool2'], [-1, 7 * 12 * 12])
+        graph['pool2_flat'] = tf.reshape(graph['pool2'], [-1, 7 * 12 * 12], name='Pool2_Reshape')
         
-        graph['fc1'] = tf.layers.dense(inputs=graph['pool2_flat'], units=hidden_size, activation=tf.nn.relu)
+        graph['fc1'] = tf.layers.dense(inputs=graph['pool2_flat'], units=hidden_size, activation=tf.nn.relu, name='FC1')
         
-        graph['fc2'] = tf.layers.dense(inputs=graph['fc1'], units=descriptor_size)
+        graph['fc2'] = tf.layers.dense(inputs=graph['fc1'], units=descriptor_size, name='Features')
 
         # graph['anchor_features'] = tf.slice(graph['fc2'], [0 * graph['batch_size'], -1], graph['batch_size'])
         # graph['puller_features'] = tf.slice(graph['fc2'], [1 * graph['batch_size'], -1], graph['batch_size'])
         # graph['pusher_features'] = tf.slice(graph['fc2'], [2 * graph['batch_size'], -1], graph['batch_size'])
 
-        graph['anchor_features'] = graph['fc2'][(0 * graph['batch_size']):(1 * graph['batch_size']), :]
-        graph['puller_features'] = graph['fc2'][(1 * graph['batch_size']):(2 * graph['batch_size']), :]
-        graph['pusher_features'] = graph['fc2'][(2 * graph['batch_size']):(3 * graph['batch_size']), :]
+        with tf.name_scope('Anchors'):
+            graph['anchor_features'] = graph['fc2'][(0 * graph['batch_size']):(1 * graph['batch_size']), :]
+        
+        with tf.name_scope('Pullers'):
+            graph['puller_features'] = graph['fc2'][(1 * graph['batch_size']):(2 * graph['batch_size']), :]
+        
+        with tf.name_scope('Pushers'):
+            graph['pusher_features'] = graph['fc2'][(2 * graph['batch_size']):(3 * graph['batch_size']), :]
 
         graph['diff_pos'] = tf.subtract(graph['anchor_features'], graph['puller_features'])
         graph['diff_neg'] = tf.subtract(graph['anchor_features'], graph['pusher_features'])
@@ -59,30 +67,46 @@ class Features(object):
         graph['diff_pos'] = tf.multiply(graph['diff_pos'], graph['diff_pos'])
         graph['diff_neg'] = tf.multiply(graph['diff_neg'], graph['diff_neg'])
 
-        graph['diff_pos'] = tf.reduce_sum(graph['diff_pos'], axis=1)
-        graph['diff_neg'] = tf.reduce_sum(graph['diff_neg'], axis=1)
+        graph['diff_pos'] = tf.reduce_sum(graph['diff_pos'], axis=1, name='DiffPos')
+        graph['diff_neg'] = tf.reduce_sum(graph['diff_neg'], axis=1, name='DiffNeg')
 
         graph['loss_pairs'] = graph['diff_pos']
-        graph['loss_triplets_ratio'] = 1 - tf.divide(
-            graph['diff_neg'], 
-            tf.add(
-                self.loss_margin,
-                graph['diff_pos']
+        
+        with tf.name_scope('loss_triplets_ratio'):
+            graph['loss_triplets_ratio'] = 1 - tf.divide(
+                graph['diff_neg'], 
+                tf.add(
+                    self.loss_margin,
+                    graph['diff_pos']
+                )
             )
-        )
         
         graph['loss_triplets'] = tf.maximum(
             tf.zeros_like(graph['loss_triplets_ratio']),
-            graph['loss_triplets_ratio']
+            graph['loss_triplets_ratio'],
+            name='LossTriplets'
         )
 
         graph['total_loss'] = graph['loss_triplets'] + graph['loss_pairs']
-        graph['loss'] = tf.reduce_mean(graph['total_loss'])
+
+        with tf.name_scope('TotalLoss'):
+            graph['loss'] = tf.reduce_mean(graph['total_loss'])
+
+        # Summary Writers for Tensorboard
+        tf.summary.scalar('loss', graph['loss'])
+
+        graph['summary'] = tf.summary.merge_all()
 
         self.graph = graph
 
         # Tensorflow Saver
         self.saver = tf.train.Saver()
+    
+    def save_model(self, session, path):
+        return self.saver.save(session, path)
+    
+    def load_model(self, session, path):
+        return self.saver.restore(session, path)
     
     def prepare_input(self, anchors, pullers, pushers):
         """Prepares input for the graph
@@ -134,19 +158,27 @@ class Features(object):
 
         return loss
     
-    def optimize(self, session, optimizer, anchors, pullers, pushers):
+    def optimize(self, session, optimizer, summary_writer, anchors, pullers, pushers):
         """Run a tensorflow optimization step
         
         Arguments:
             session {tf.Session} -- A tensorflow sessions
             optimizer {tf.Optimizer} -- A tensorflow optimizer (initialized w/ learning rate)
+            summary_writer {tf.summary.FileWriter} -- A tensorflow summary file writer
             anchors {array} -- a numpy array of anchors
             pullers {array} -- a numpy array of pullers
             pushers {array} -- a numpy array of pushers
         """
 
         X, N = self.prepare_input(anchors, pullers, pushers)
-        return session.run(optimizer, feed_dict={
+
+        self.optimization_step += 1
+        
+        results, summary = session.run([optimizer, self.graph['summary']], feed_dict={
             self.graph['input_layer']: X,
             self.graph['batch_size']: N
         })
+
+        summary_writer.add_summary(summary, self.optimization_step)
+
+        return results

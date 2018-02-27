@@ -16,11 +16,12 @@ def is_gpu_available():
 
 # Training settings
 parser = argparse.ArgumentParser(description='Feature Extractor Trainer')
-parser.add_argument('--batch-size', type=int, default=16, help='input batch size for training (default: 64)')
+parser.add_argument('--batch-size', type=int, default=8, help='input batch size for training (default: 64)')
 parser.add_argument('--dataset', default='/Users/yehyaa/Downloads/dataset/', help='input batch size for training (default: 64)')
 parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.01)')
 parser.add_argument('--log-interval', type=int, default=10, help='how many batches to wait before logging training status')
+parser.add_argument('--log-path', type=str, default='/tmp/tensorboard', help='logging path for tensorboard')
 parser.add_argument('--num-workers', type=int, default=2, help='how many workers for data loading')
 parser.add_argument('--manual-seed', type=int, default=800, help='manual seed for random number generators')
 
@@ -61,6 +62,9 @@ if __name__ == '__main__':
         # Initialize all variables
         sess.run(init)
 
+        # Tensorboard Initialization
+        summary_writer = tf.summary.FileWriter(args.log_path, sess.graph)
+        
         # Optimize :)
         for epoch in range(1, args.epochs + 1):
             batch_iterator = dataset.batch_training_triplets(args.batch_size)
@@ -69,7 +73,7 @@ if __name__ == '__main__':
                     data['anchor'], data['puller'], data['pusher']
 
                 # Backpropagate gradients
-                model.optimize(sess, optimizer, anchors, pullers, pushers)
+                model.optimize(sess, optimizer, summary_writer, anchors, pullers, pushers)
                 
                 # Report on progress
                 if batch_idx % args.log_interval == 0:
@@ -82,5 +86,5 @@ if __name__ == '__main__':
                     ))
             
             # Save Model After Each Epoch
-            save_path = model.saver.save(sess, 'checkpoints/model.epoch.{}.ckpt'.format(epoch))
+            save_path = model.save_model(sess, 'checkpoints/model.epoch.{}.ckpt'.format(epoch))
             logger.info("Model saved @ {}".format(save_path))
