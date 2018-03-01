@@ -1,7 +1,9 @@
 import argparse
 import random
 import tensorflow as tf
+import numpy as np
 from models.features import Features
+from models.classifier import NearestNeighbour
 from dataset import ObjectsDataset
 from helpers.logger import setup_logger
 
@@ -27,14 +29,66 @@ parser.add_argument('--manual-seed', type=int, default=800, help='manual seed fo
 
 use_gpu = is_gpu_available()
 
+# Set up logger
+logger = setup_logger()
+
+def dataset_in_feature_space(session, model, dataset, dataset_list, batch_size=16):
+    dataset_features = []
+    for batch in dataset.batch_items(dataset_list, batch_size, shuffle=False):
+        dataset_features.append(model(session, batch))
+    
+    return np.concatenate(dataset_features)
+
+
+def evaluate_model(session, model, dataset, batch_size=16):
+    logger.info("Transforming features for coarse dataset ...")
+    coarse_features = dataset_in_feature_space(session, model, dataset, dataset.dataset_coarse_list, batch_size)
+    logger.info("Got {} features from coarse dataset(n= {}) ...".format(coarse_features.shape, len(dataset.dataset_coarse_list)))
+    
+    logger.info("Transforming features for test dataset ...")
+    test_features = dataset_in_feature_space(session, model, dataset, dataset.dataset_test_list, batch_size)
+    logger.info("Got {} features from coarse dataset(n= {}) ...".format(test_features.shape, len(dataset.dataset_test_list)))
+
+    logger.info("Creating classifier using coarse features ...")
+    classifier = NearestNeighbour(coarse_features, dataset.dataset_coarse_list)
+
+    histogram = {
+        10: 0,
+        20: 0,
+        40: 0,
+        180: 0
+    }
+
+    for idx in range(test_features.shape[0]):
+        test_label, (_, test_quanternion) = dataset.dataset_test_list[idx]
+        feature_vector = test_features[idx, :]
+        prediction_label, (_, prediction_quaternion) = classifier.match(feature_vector)
+
+        if test_label != prediction_label:
+            continue
+        
+        # Both labels match-- Build the histogram
+        angle = test_quanternion.distance(prediction_quaternion)
+        if angle <= np.pi / 18:
+            histogram[10] += 1
+        
+        if angle <= 2 * np.pi / 18:
+            histogram[2 * 10] += 1
+        
+        if angle <= 4 * np.pi / 18:
+            histogram[4 * 10] += 1
+        
+        if angle <= 18 * np.pi / 18:
+            histogram[18 * 10] += 1
+    
+    return histogram
+
+
 if __name__ == '__main__':
     args = parser.parse_args()
 
     tf.set_random_seed(args.manual_seed)
     random.seed(args.manual_seed)
-
-    # Set up logger
-    logger = setup_logger()
 
     logger.info(args)
 
@@ -84,6 +138,10 @@ if __name__ == '__main__':
                         epoch, batch_idx * args.batch_size, dataset.training_length(),
                         (100. * batch_idx * args.batch_size) / dataset.training_length(), loss
                     ))
+
+                    # Evaluate the Model
+                    histogram = evaluate_model(sess, model, dataset, args.batch_size)
+                    logger.info("Model histgram is: {}".format(histogram))
             
             # Save Model After Each Epoch
             save_path = model.save_model(sess, 'checkpoints/model.epoch.{}.ckpt'.format(epoch))
