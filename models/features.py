@@ -126,6 +126,23 @@ class Features(object):
         X = np.concatenate((anchors, pullers, pushers), axis=0)
 
         return X, N
+    
+    def __call__(self, session, X):
+        """Get features given images in X
+        
+        Arguments:
+            session {tf.Session} -- an actual session where the model is loaded
+            X {np.array} -- an array of images
+        
+        Returns:
+            np.array -- an array of features
+        """
+
+        feats = session.run(self.graph['fc2'], feed_dict={
+            self.graph['input_layer']: X
+        })
+
+        return feats
 
     def evaluate_triplet(self, anchors, pullers, pushers, session=None):
         """Generate the features using the forward pass
