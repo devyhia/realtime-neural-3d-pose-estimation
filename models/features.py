@@ -28,6 +28,8 @@ class Features(object):
             inputs=graph['input_layer'],
             filters=16,
             kernel_size=[8, 8],
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
+            bias_initializer=tf.zeros_initializer(),
             activation=tf.nn.relu)
 
         # Pooling Layer #1
@@ -39,14 +41,27 @@ class Features(object):
             inputs=graph['pool1'],
             filters=7,
             kernel_size=[5, 5],
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
+            bias_initializer=tf.zeros_initializer(),
             activation=tf.nn.relu)
         graph['pool2'] = tf.layers.max_pooling2d(inputs=graph['conv2'], pool_size=[2, 2], strides=2, name='Pool2')
 
         graph['pool2_flat'] = tf.reshape(graph['pool2'], [-1, 7 * 12 * 12], name='Pool2_Reshape')
         
-        graph['fc1'] = tf.layers.dense(inputs=graph['pool2_flat'], units=hidden_size, activation=tf.nn.relu, name='FC1')
+        graph['fc1'] = tf.layers.dense(
+            inputs=graph['pool2_flat'],
+            units=hidden_size,
+            activation=tf.nn.relu,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
+            bias_initializer=tf.zeros_initializer(),
+            name='FC1')
         
-        graph['fc2'] = tf.layers.dense(inputs=graph['fc1'], units=descriptor_size, name='Features')
+        graph['fc2'] = tf.layers.dense(
+            inputs=graph['fc1'],
+            units=descriptor_size,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
+            bias_initializer=tf.zeros_initializer(),
+            name='Features')
 
         # graph['anchor_features'] = tf.slice(graph['fc2'], [0 * graph['batch_size'], -1], graph['batch_size'])
         # graph['puller_features'] = tf.slice(graph['fc2'], [1 * graph['batch_size'], -1], graph['batch_size'])
@@ -90,10 +105,12 @@ class Features(object):
         graph['total_loss'] = graph['loss_triplets'] + graph['loss_pairs']
 
         with tf.name_scope('TotalLoss'):
-            graph['loss'] = tf.reduce_mean(graph['total_loss'])
+            # graph['loss'] = tf.reduce_mean(graph['total_loss'])
+            graph['loss'] = tf.reduce_sum(graph['total_loss'])
 
         # Summary Writers for Tensorboard
         tf.summary.scalar('loss', graph['loss'])
+        tf.summary.histogram('fc2', graph['fc2'])
 
         graph['summary'] = tf.summary.merge_all()
 
