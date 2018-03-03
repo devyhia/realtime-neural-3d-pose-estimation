@@ -138,11 +138,16 @@ if __name__ == '__main__':
                         epoch, batch_idx * args.batch_size, dataset.training_length(),
                         (100. * batch_idx * args.batch_size) / dataset.training_length(), loss
                     ))
-
+                
+                if (batch_idx + 1) % (10 * args.log_interval) == 0:
                     # Evaluate the Model
                     histogram = evaluate_model(sess, model, dataset, args.batch_size)
                     logger.info("Model histgram is: {}".format(histogram))
             
+            # Evaluate the Model
+            histogram = evaluate_model(sess, model, dataset, args.batch_size)
+            logger.info("Model histgram is: {}".format(histogram))
+
             # Save Model After Each Epoch
             save_path = model.save_model(sess, 'checkpoints/model.epoch.{}.ckpt'.format(epoch))
             logger.info("Model saved @ {}".format(save_path))
