@@ -6,6 +6,7 @@ from models.features import Features
 from models.classifier import NearestNeighbour
 from dataset import ObjectsDataset
 from helpers.logger import setup_logger
+from helpers import dataset_in_feature_space
 
 from tensorflow.python.client import device_lib
 
@@ -24,6 +25,7 @@ parser.add_argument('--epochs', type=int, default=1, help='number of epochs to t
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.01)')
 parser.add_argument('--log-interval', type=int, default=10, help='how many batches to wait before logging training status')
 parser.add_argument('--log-path', type=str, default='/tmp/tensorboard', help='logging path for tensorboard')
+parser.add_argument('--resume', type=str, default=None, help='a checkpoint to resume from')
 parser.add_argument('--num-workers', type=int, default=2, help='how many workers for data loading')
 parser.add_argument('--manual-seed', type=int, default=800, help='manual seed for random number generators')
 
@@ -31,13 +33,6 @@ use_gpu = is_gpu_available()
 
 # Set up logger
 logger = setup_logger()
-
-def dataset_in_feature_space(session, model, dataset, dataset_list, batch_size=16):
-    dataset_features = []
-    for batch in dataset.batch_items(dataset_list, batch_size, shuffle=False):
-        dataset_features.append(model(session, batch))
-    
-    return np.concatenate(dataset_features)
 
 
 def evaluate_model(session, model, dataset, batch_size=16):
@@ -113,8 +108,12 @@ if __name__ == '__main__':
 
     # Start Training
     with tf.Session() as sess:
-        # Initialize all variables
+        # Initialize the graph
         sess.run(init)
+
+        # Load previous checkpoint
+        if args.resume:
+            model.load_model(sess, args.resume)
 
         # Tensorboard Initialization
         summary_writer = tf.summary.FileWriter(args.log_path, sess.graph)
