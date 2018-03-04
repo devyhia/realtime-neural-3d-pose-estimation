@@ -26,8 +26,9 @@ class ObjectsDataset(object):
         Arguments:
             dataset_dir {string} -- location of the dataset folder
         """
-        
-        self.mean = np.array([63.96652548, 54.81466454, 48.04923144])[np.newaxis, np.newaxis, :]
+
+        self.mean = np.array([63.96652548, 54.81466454, 48.04923144])[
+            np.newaxis, np.newaxis, :]
         self.logger = setup_logger()
         self.channels, self.width, self.height = 3, 64, 64
 
@@ -115,7 +116,7 @@ class ObjectsDataset(object):
             itertools.product([c], self.dataset_test[c])
             for c in self.classes
         ]))
-    
+
     # def save_dataset_coarse_classes(self):
     #     metadata = '/tmp/metadata.tsv'
     #     with open(metadata, 'w') as metadata_file:
@@ -125,44 +126,43 @@ class ObjectsDataset(object):
 
     def get_item(self, dataset_list, idx):
         """Get Coarse Item (i.e. Image)
-        
+
         Arguments:
             idx {int} -- index of the coarse element
-        
+
         Returns:
             array -- array of the image
         """
 
         c, _ = dataset_list[idx]
         item = self.make_triplet(c, _)
-        
+
         item_image = np.asarray(item.image)
 
         return item_image - self.mean
-    
 
     def get_training_triplet(self, idx):
         """Loads one training item (anchor, puller and pusher).
-        
+
         Arguments:
             pos {tuple} -- (class, index)
-        
+
         Returns:
             TrainingItem -- (anchor, puller, pusher)
         """
-        
+
         triplet = self.get_triplets(idx)
-        
+
         anchor = np.asarray(triplet.anchor.image)
         puller = np.asarray(triplet.puller.image)
         pusher = np.asarray(triplet.pusher.image)
 
-        return  {
+        return {
             'anchor': anchor - self.mean,
             'puller': puller - self.mean,
             'pusher': pusher - self.mean
         }
-    
+
     def get_triplets(self, idx):
         """Get triplets for training the CNN (i.e. to learn the feature space)
 
@@ -200,37 +200,37 @@ class ObjectsDataset(object):
             )
 
         return ObjectsDataset.Triplet(anchor, puller, pusher)
-    
+
     def make_triplet(self, c, tpl):
         """Make triplets for the training
-        
+
         Arguments:
             c {string} -- class name
             tpl {tuple} -- (file_path, quaternion)
-        
+
         Returns:
             TripletItem -- a triplet item containing image, file path, pose and class
         """
 
         return ObjectsDataset.TripletItem(
-            path=   tpl[0],
-            pose=   tpl[1],
-            klass=  c,
-            image=  Image.open(tpl[0])
+            path=tpl[0],
+            pose=tpl[1],
+            klass=c,
+            image=Image.open(tpl[0])
         )
-    
+
     def training_length(self):
         return len(self.dataset_train_list)
-    
+
     def get_anchor(self, c, idx):
         return self.make_triplet(c, self.dataset_train[c][idx])
-    
+
     def batch_items(self, dataset_list, batch_size, shuffle=True):
         """Coarse items batch generator
-        
+
         Arguments:
             batch_size {int} -- Batch size to be generated
-        
+
         Keyword Arguments:
             shuffle {boolean} -- Should shuffle (default: {True})
         """
@@ -244,8 +244,9 @@ class ObjectsDataset(object):
         for ndx in range(0, total, batch_size):
             batch_indices = indices[ndx:min(ndx + batch_size, total)]
 
-            batch_images = np.zeros((len(batch_indices), self.width, self.height, self.channels))
-            
+            batch_images = np.zeros(
+                (len(batch_indices), self.width, self.height, self.channels))
+
             # Create the triplets
             for batch_index, dataset_index in enumerate(batch_indices):
                 item = self.get_item(dataset_list, dataset_index)
@@ -255,10 +256,10 @@ class ObjectsDataset(object):
 
     def batch_training_triplets(self, batch_size, shuffle=True):
         """Training triplets batch generator
-        
+
         Arguments:
             batch_size {int} -- Batch size to be generated
-        
+
         Keyword Arguments:
             shuffle {boolean} -- Should shuffle (default: {True})
         """
@@ -277,7 +278,7 @@ class ObjectsDataset(object):
                 'puller': np.zeros((len(batch_indices), self.width, self.height, self.channels)),
                 'pusher': np.zeros((len(batch_indices), self.width, self.height, self.channels))
             }
-            
+
             # Create the triplets
             for batch_index, dataset_index in enumerate(batch_indices):
                 triplet = self.get_training_triplet(dataset_index)
