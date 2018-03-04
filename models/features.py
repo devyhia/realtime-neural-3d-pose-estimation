@@ -4,7 +4,7 @@ import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.INFO)
 
 class Features(object):
-    def __init__(self, loss_margin=0.01):
+    def __init__(self, loss_margin=1e-8, train=True):
         self.loss_margin = loss_margin
         self.optimization_step = 0
 
@@ -15,6 +15,8 @@ class Features(object):
         descriptor_size = 16
 
         graph = {}
+
+        graph['learning_rate'] = tf.placeholder(tf.float32, shape=[])
 
         # Input Layer
         graph['input_layer'] = tf.placeholder(tf.float32, shape=[None, input_dim, input_dim, channels], name='Input')
@@ -102,7 +104,7 @@ class Features(object):
             name='LossTriplets'
         )
 
-        graph['total_loss'] = graph['loss_triplets'] + graph['loss_pairs']
+        graph['total_loss'] = 1e2 * graph['loss_triplets'] + 1e-4 * graph['loss_pairs']
 
         with tf.name_scope('TotalLoss'):
             # graph['loss'] = tf.reduce_mean(graph['total_loss'])
@@ -113,6 +115,10 @@ class Features(object):
         tf.summary.histogram('fc2', graph['fc2'])
 
         graph['summary'] = tf.summary.merge_all()
+
+        # Optimizer
+        if train:
+            self.optimizer = tf.train.AdamOptimizer(graph['learning_rate']).minimize(graph['total_loss'])
 
         self.graph = graph
 
@@ -192,7 +198,7 @@ class Features(object):
 
         return loss
     
-    def optimize(self, session, optimizer, summary_writer, anchors, pullers, pushers):
+    def optimize(self, session, summary_writer, lr, anchors, pullers, pushers):
         """Run a tensorflow optimization step
         
         Arguments:
@@ -208,9 +214,10 @@ class Features(object):
 
         self.optimization_step += 1
         
-        results, summary = session.run([optimizer, self.graph['summary']], feed_dict={
+        results, summary = session.run([self.optimizer, self.graph['summary']], feed_dict={
             self.graph['input_layer']: X,
-            self.graph['batch_size']: N
+            self.graph['batch_size']: N,
+            self.graph['learning_rate']: lr
         })
 
         summary_writer.add_summary(summary, self.optimization_step)
