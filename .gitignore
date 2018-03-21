@@ -1,5 +1,6 @@
-*.ipynb
-.ipynb*
+# *.ipynb
+# .ipynb*
+.ipynb_checkpoints
 .pytest*
 .vscode*
 __pycache__
