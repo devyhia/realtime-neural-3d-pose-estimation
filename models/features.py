@@ -17,6 +17,7 @@ class Features(object):
         graph = {}
 
         graph['learning_rate'] = tf.placeholder(tf.float32, shape=[])
+        graph['regularizer'] = tf.contrib.layers.l2_regularizer(scale=0.1)
 
         # Input Layer
         graph['input_layer'] = tf.placeholder(tf.float32, shape=[None, input_dim, input_dim, channels], name='Input')
@@ -32,6 +33,8 @@ class Features(object):
             kernel_size=[8, 8],
             kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
             bias_initializer=tf.zeros_initializer(),
+            kernel_regularizer=graph['regularizer'],
+            bias_regularizer=graph['regularizer'],
             activation=tf.nn.relu)
 
         # Pooling Layer #1
@@ -45,6 +48,8 @@ class Features(object):
             kernel_size=[5, 5],
             kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
             bias_initializer=tf.zeros_initializer(),
+            kernel_regularizer=graph['regularizer'],
+            bias_regularizer=graph['regularizer'],
             activation=tf.nn.relu)
         graph['pool2'] = tf.layers.max_pooling2d(inputs=graph['conv2'], pool_size=[2, 2], strides=2, name='Pool2')
 
@@ -56,6 +61,8 @@ class Features(object):
             activation=tf.nn.relu,
             kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
             bias_initializer=tf.zeros_initializer(),
+            kernel_regularizer=graph['regularizer'],
+            bias_regularizer=graph['regularizer'],
             name='FC1')
         
         graph['fc2'] = tf.layers.dense(
@@ -63,11 +70,9 @@ class Features(object):
             units=descriptor_size,
             kernel_initializer=tf.truncated_normal_initializer(stddev=0.05),
             bias_initializer=tf.zeros_initializer(),
+            kernel_regularizer=graph['regularizer'],
+            bias_regularizer=graph['regularizer'],
             name='Features')
-
-        # graph['anchor_features'] = tf.slice(graph['fc2'], [0 * graph['batch_size'], -1], graph['batch_size'])
-        # graph['puller_features'] = tf.slice(graph['fc2'], [1 * graph['batch_size'], -1], graph['batch_size'])
-        # graph['pusher_features'] = tf.slice(graph['fc2'], [2 * graph['batch_size'], -1], graph['batch_size'])
 
         with tf.name_scope('Anchors'):
             graph['anchor_features'] = graph['fc2'][(0 * graph['batch_size']):(1 * graph['batch_size']), :]
@@ -104,7 +109,10 @@ class Features(object):
             name='LossTriplets'
         )
 
-        graph['total_loss'] = 1e2 * graph['loss_triplets'] + 1e-4 * graph['loss_pairs']
+        reg_variables = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+        graph['reg_loss'] = tf.contrib.layers.apply_regularization(graph['regularizer'], reg_variables)
+
+        graph['total_loss'] = 1e2 * graph['loss_triplets'] + 1e-4 * graph['loss_pairs'] + graph['reg_loss']
 
         with tf.name_scope('TotalLoss'):
             # graph['loss'] = tf.reduce_mean(graph['total_loss'])
